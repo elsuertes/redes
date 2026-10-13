@@ -1,5 +1,8 @@
 #include "servidor.h"
 
+volatile sig_atomic_t server_encendido = 1;
+
+
 int main(){
     srand(time(NULL));
     signal(SIGINT, manejador);
@@ -17,7 +20,6 @@ int main(){
     int numClientes = 0;
     char identificador[MSG_SIZE];
     char buffer[MSG_SIZE];
-    sig_atomic_t server_encendido = 1;
 
     //* abrimos el socket en modo IPv4 y TCP
   	socket_maestro = socket (AF_INET, SOCK_STREAM, 0);

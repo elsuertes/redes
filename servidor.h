@@ -48,12 +48,12 @@ struct Partida {
     int socket_j2;                    
     int turno;                  // 1 = Turno del J1, 2 = Turno del J2
     struct Casilla tablero[FILAS_TABLERO][COLUMS_TABLERO];};
-
+extern volatile sig_atomic_t server_encendido;
 // Prototipos de funciones implementadas en funciones_servidor.c
 void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct Cliente clientes[], int *numClientes, struct Partida partidas[]);
 void salirCliente(int socket, fd_set *readfds, struct Cliente clientes[], int *numClientes, struct Partida partidas[]);
 bool traducir_coordenada(char *coord, int *fila, int *col);
-void manejador(int signum, sig_atomic_t server_encendido);
+void manejador(int signum);
 void salirServer(char *buffer, fd_set *readfds, struct Cliente clientes[], int *numClientes);
 
 #endif

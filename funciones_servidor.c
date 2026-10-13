@@ -27,7 +27,7 @@ int i = -1;
     (*numClientes)--;
 }
 
-void manejador (int signum, sig_atomic_t server_encendido){
+void manejador (int signum){
     printf("\n-Ok. Se ha recibido la señal sigint (ctrl +c)\n");
     signal(SIGINT,manejador);
     server_encendido = 0;
