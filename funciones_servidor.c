@@ -488,14 +488,32 @@ void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct C
     } else if (clientes[id_user].estado == JUGANDO) {
         if (strcmp(comando, "ESTADO") == 0) {
             estado(socket_cliente, id_partida_actual, partidas);
-        } else if (strcmp(comando, "CONQUISTAR") == 0) {
-            conquistar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
-        } else if (strcmp(comando, "ATACAR") == 0) {
-            atacar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
-        } else if (strcmp(comando, "REFORZAR") == 0) {
-            reforzar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
-        } else if (strcmp(comando, "PASAR") == 0) {
-            pasar(socket_cliente, id_partida_actual, partidas);
+        } else if (strcmp(comando, "CONQUISTAR") == 0 || 
+                   strcmp(comando, "ATACAR") == 0    || 
+                   strcmp(comando, "REFORZAR") == 0  || 
+                   strcmp(comando, "PASAR") == 0){
+
+            // 1. Comprobar si ya ha consumido su límite de 10 turnos
+            if (clientes[id_user].turno >= 10) {
+                char limite[] = "-Err. Has alcanzado el limite maximo de 10 turnos.\n";
+                send(socket_cliente, limite, strlen(limite), 0);
+                return;
+            }
+            if (strcmp(comando, "CONQUISTAR") == 0) {
+                conquistar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
+            } else if (strcmp(comando, "ATACAR") == 0) {
+                atacar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
+            } else if (strcmp(comando, "REFORZAR") == 0) {
+                reforzar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
+            } else if (strcmp(comando, "PASAR") == 0) {
+                pasar(socket_cliente, id_partida_actual, partidas);
+            }
+            clientes[id_user].turno++;
+            //* avisar de cuántos turnos le quedan
+            char aviso[100];
+            snprintf(aviso, sizeof(aviso), "+Ok. Turno %d/10 consumido.\n", clientes[id_user].turno);
+            send(socket_cliente, aviso, strlen(aviso), 0);
+
         } else if (strcmp(comando, "SALIR") == 0) {
             salirCliente(socket_cliente, readfds, clientes, numClientes, partidas);
         }

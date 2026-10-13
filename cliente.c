@@ -13,7 +13,7 @@
 #define MSG_SIZE 250
 #define PUERTO 2026
 
-int main() {
+int main(int argc, char *argv[]) {
     int sd;
     struct sockaddr_in sockname;
     char buffer[MSG_SIZE];
@@ -31,7 +31,11 @@ int main() {
   
     sockname.sin_family = AF_INET;
     sockname.sin_port = htons(PUERTO);
-    sockname.sin_addr.s_addr = inet_addr("127.0.0.1"); //?
+    char *ip = "127.0.0.1";
+    if (argc > 1) {
+        ip = argv[1];
+    }
+    sockname.sin_addr.s_addr = inet_addr(ip);
 
     // 3. Conectar al servidor
     

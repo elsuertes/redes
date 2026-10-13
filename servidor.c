@@ -84,14 +84,12 @@ int main(){
                         bytes_recibidos = recv(i,buffer,sizeof(buffer),0);
                         if(bytes_recibidos > 0){
                             buffer[bytes_recibidos] = '\0';
-                            if(strcmp(buffer,"SALIR\n") == 0){ salirCliente(i,&readfds, clientes, &numClientes, partidas);} 
-                            else if(clientes[numClientes].turno <=10){ procesarMensaje(i, buffer, &readfds, clientes, &numClientes, partidas);}
-
+                            if(strcmp(buffer,"SALIR\n") == 0) salirCliente(i,&readfds, clientes, &numClientes, partidas); 
+                            else    procesarMensaje(i, buffer, &readfds, clientes, &numClientes, partidas);
                         }else if(bytes_recibidos == 0){
                             printf("-Ok. El socket %d ha cerrado la conexión (Ctrl+C o desconexión)\n", i);
                             salirCliente(i, &readfds, clientes, &numClientes, partidas);
                         }else{
-                            // Error de lectura en el socket
                             perror("-Err. Error en recv");
                             salirCliente(i, &readfds, clientes, &numClientes, partidas);
                         }
