@@ -12,6 +12,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <time.h>
 
 #define PUERTO 2026
 #define MSG_SIZE 250
@@ -32,7 +34,8 @@ struct Cliente {
     int socket;                 // El descriptor del socket para enviarle/recibir mensajes
     char username[50];          
     enum EstadoCliente estado;  // El estado actual para controlar qué comandos puede usar
-    int id_partida;             // El índice de la partida en la que está  (-1 si no está jugando)
+    int id_partida;  
+    int turno;           // El índice de la partida en la que está  (-1 si no está jugando)
     };
 
 struct Casilla {

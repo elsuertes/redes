@@ -53,16 +53,178 @@ bool traducir_coordenada(char *coord, int *fila, int *col){
     return true;
 }
 
-void iniciar_partida(){
-    int j1 = 0,j2 = 0, cont =0;
-    for(cliente){
-        if(cliente[].estado == BUSCANDO_PARTIDA){
-            if(cont>2)  break;
-            cont++;
-            j1 += i;
+void registro(int socket, char *user, char *password) {
+    if (strlen(user) == 0 || strlen(password) == 0) {
+        char err[] = "-Err. Formato: REGISTRO -u <usuario> -p <password>\n";
+        send(socket, err, strlen(err), 0);
+        return;
+    }
+
+    FILE *f = fopen("usuarios.txt", "a+");
+    if (f == NULL) {
+        char err[] = "-Err. Error interno al acceder a la base de datos\n";
+        send(socket, err, strlen(err), 0);
+        return;}
+
+    char u[50], p[50];
+    rewind(f);
+    //* leemos el fichero linea a linea y comprobamos que no exista ya el usuario
+    while (fscanf(f, "%49s %49s", u, p) == 2) {
+        if (strcmp(u, user) == 0) {
+            char err[] = "-Err. El usuario ya existe\n";
+            send(socket, err, strlen(err), 0);
+            fclose(f);
+            return;
         }
     }
 
+    fprintf(f, "%s %s\n", user, password);
+    fclose(f);
+
+    char ok[] = "+Ok. Usuario registrado con éxito\n";
+    send(socket, ok, strlen(ok), 0);
+}
+
+void usuario(int socket, char *nombre_usuario, struct Cliente *clientes) {
+    FILE *f = fopen("usuarios.txt", "r");
+    if (f == NULL) {
+        char err[] = "-Err. No hay usuarios registrados en el sistema\n";
+        send(socket, err, strlen(err), 0);
+        return;}
+
+    char u[50], p[50];
+    bool existe = false;
+
+    while (fscanf(f, "%49s %49s", u, p) == 2) {
+        if (strcmp(u, nombre_usuario) == 0) {
+            existe = true;
+            break;}
+    }
+    fclose(f);
+
+    if (existe) {
+        strncpy(clientes->username, nombre_usuario, sizeof(clientes->username) - 1);
+        clientes->username[sizeof(clientes->username) - 1] = '\0';
+        clientes->estado = ESPERANDO_PASS;
+        char ok[] = "+Ok. Usuario correcto. Introduzca contraseña\n";
+        send(socket, ok, strlen(ok), 0);
+    }else{
+        char err[] = "-Err. Usuario no encontrado\n";
+        send(socket, err, strlen(err), 0);
+    }
+}
+
+void passwd(int socket, char *password, struct Cliente *clientes) {
+    if (clientes->estado != ESPERANDO_PASS) {
+        char err[] = "-Err. Debe enviar primero el comando USUARIO\n";
+        send(socket, err, strlen(err), 0);
+        return;}
+    FILE *f = fopen("usuarios.txt", "r");
+    if (f == NULL) {
+        char err[] = "-Err. Error interno al verificar contraseña\n";
+        send(socket, err, strlen(err), 0);
+        return;}
+
+    char u[50], p[50];
+    bool validado = false;
+
+    while (fscanf(f, "%49s %49s", u, p) == 2) {
+        if (strcmp(u, clientes->username) == 0 && strcmp(p, password) == 0) {
+            validado = true;
+            break;
+        }
+    }
+    fclose(f);
+
+    if (validado) {
+        clientes->estado = VALIDADO;
+        char ok[] = "+Ok. Usuario validado\n";
+        send(socket, ok, strlen(ok), 0);
+    } else {
+        // Vuelve a NO_VALIDADO para obligar a reiniciar el flujo si falla
+        clientes->estado = NO_VALIDADO;
+        char err[] = "-Err. Contraseña incorrecta\n";
+        send(socket, err, strlen(err), 0);
+    }
+}
+
+void iniciar_partida(int socket_cliente, struct Cliente clientes[], int numClientes, struct Partida partidas[], int maxPartidas){
+    int idx_solicitante = -1;
+    int idx_rival = -1;
+    int id_p = -1;
+    for (int i = 0; i < numClientes; i++){
+        if (clientes[i].socket == socket_cliente){
+            idx_solicitante = i;
+            break;
+        }
+    }
+    if (idx_solicitante == -1) return;
+    //* Marcamos al jugador en cola de espera
+    clientes[idx_solicitante].estado = BUSCANDO_PARTIDA;
+    //* Buscamos si hay otro jugador esperando
+    for (int i = 0; i < numClientes; i++){
+        if (i != idx_solicitante && clientes[i].estado == BUSCANDO_PARTIDA){
+            idx_rival = i;
+            break;
+        }
+    }
+    //* Si nadie más está buscando, se le informa 
+    if (idx_rival == -1){
+        char espera[] = "+Ok. Esperando a otro jugador...\n";
+        send(socket_cliente, espera, strlen(espera), 0);
+        return;
+    }
+    //* Si hay rival, buscamos una ranura de partida libre
+    for (int i = 0; i < maxPartidas; i++){
+        if (!partidas[i].activa){
+            id_p = i;
+            break;
+        }
+    }
+    if (id_p == -1){
+        char lleno[] = "-Err. No hay partidas disponibles en el servidor\n";
+        send(socket_cliente, lleno, strlen(lleno), 0);
+        send(clientes[idx_rival].socket, lleno, strlen(lleno), 0);
+        clientes[idx_solicitante].estado = VALIDADO;
+        clientes[idx_rival].estado = VALIDADO;
+        return;
+    }
+
+    //* Inicializar datos de la partida
+    partidas[id_p].activa = true;
+    partidas[id_p].socket_j1 = clientes[idx_rival].socket;
+    partidas[id_p].socket_j2 = clientes[idx_solicitante].socket;
+    partidas[id_p].turno = 1; // Comienza J1
+    for (int f = 0; f < 5; f++){
+        for (int c = 0; c < 5; c++){
+            partidas[id_p].tablero[f][c].propietario = 0;
+            partidas[id_p].tablero[f][c].tropas = 0;
+        }
+    }
+
+    int f1 = rand() % 5;
+    int c1 = rand() % 5;
+    int f2, c2;
+    do {
+        f2 = rand() % 5;
+        c2 = rand() % 5;
+    } while (f1 == f2 && c1 == c2);
+    //* Casillas base iniciales (por ejemplo: J1 en A1 [0][0] y J2 en E5 [4][4])
+    partidas[id_p].tablero[f1][c1].propietario = 1;
+    partidas[id_p].tablero[f1][c1].tropas = 30;
+    partidas[id_p].tablero[f2][c2].propietario = 2;
+    partidas[id_p].tablero[f2][c2].tropas = 30;
+    //* Actualizar estado de ambos jugadores
+    clientes[idx_rival].estado = JUGANDO;
+    clientes[idx_rival].id_partida = id_p;
+    clientes[idx_solicitante].estado = JUGANDO;
+    clientes[idx_solicitante].id_partida = id_p;
+
+    //* Notificar el inicio a ambos jugadores
+    char msg_j1[] = "+Ok. Partida encontrada. Eres el Jugador 1 (J1). Tu turno.\n";
+    char msg_j2[] = "+Ok. Partida encontrada. Eres el Jugador 2 (J2). Turno de tu rival.\n";
+    send(partidas[id_p].socket_j1, msg_j1, strlen(msg_j1), 0);
+    send(partidas[id_p].socket_j2, msg_j2, strlen(msg_j2), 0);
 }
 
 void estado(int socket, int id_partida, struct Partida partidas[]){
@@ -254,38 +416,89 @@ void pasar(int socket, int id_partida, struct Partida partidas[]){
 void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct Cliente clientes[], int *numClientes, struct Partida partidas[]){
     char comando[50];
     char respuesta[MSG_SIZE];
+    char user[100];
+    char contraseña[100];
     char origen_str[100];
     char destino_str[100];
-    int unidades_enviadas;
+    char aux[100];
+    int unidades_enviadas = 0;
     memset(comando, 0, sizeof(comando));
     memset(respuesta, 0, sizeof(respuesta));
-    int id_user = 0;
-    if(strlen(buffer) <= 2) return; //por si tiene /n o /r/n
-    size_t final = strcspn(buffer, "\n");
-    buffer[final] = '\0';
-    for(int i=0;i<*numClientes; i++){
-        if(clientes[i].socket == socket_cliente){
-            id_user =i;
+    memset(user, 0, sizeof(user));
+    memset(contraseña, 0, sizeof(contraseña));
+    memset(origen_str, 0, sizeof(origen_str));
+    memset(destino_str, 0, sizeof(destino_str));
+    memset(aux, 0, sizeof(aux));
+    if (strlen(buffer) <= 2) return;
+    buffer[strcspn(buffer, "\n")] = '\0';
+    //* Identificar el índice del cliente en el array
+    int id_user = -1;
+    for (int i = 0; i < *numClientes; i++){
+        if (clientes[i].socket == socket_cliente){
+            id_user = i;
             break;
         }
+    }
+    if (id_user == -1) return;
 
+  // Extraer COMANDO
+    char *token = strtok(buffer, " ");
+    if (token == NULL) return;
+    strncpy(comando, token, sizeof(comando) - 1);
+    if (strcmp(comando, "REGISTRO") == 0) {
+        token = strtok(NULL, " ");
+        if (token) strncpy(user, token, sizeof(user) - 1);
+        token = strtok(NULL, " ");
+        if (token) strncpy(contraseña, token, sizeof(contraseña) - 1);
+    } else if (strcmp(comando, "USUARIO") == 0) {
+        token = strtok(NULL, " ");
+        if (token) strncpy(user, token, sizeof(user) - 1);
+    } else if (strcmp(comando, "PASSWORD") == 0) {
+        token = strtok(NULL, " ");
+        if (token) strncpy(contraseña, token, sizeof(contraseña) - 1);
+    } else if (strcmp(comando, "CONQUISTAR") == 0 || strcmp(comando, "ATACAR") == 0 || strcmp(comando, "REFORZAR") == 0) {
+        token = strtok(NULL, " ");
+        if (token) strncpy(origen_str, token, sizeof(origen_str) - 1);
+        token = strtok(NULL, " ");
+        if (token) strncpy(destino_str, token, sizeof(destino_str) - 1);
+        token = strtok(NULL, " ");
+        if (token) strncpy(aux, token, sizeof(aux) - 1); unidades_enviadas = atoi(aux);
     }
 
-    if(clientes[id_user].estado == NO_VALIDADO || clientes[id_user].estado == ESPERANDO_PASS){
-        if(strcmp(comando,"REGISTRO"))      registro();
-        else if(strcmp(comando,"USUARIO"))  usuario();
-        else if(strcmp(comando,"PASSWORD")) passwd();
-    }else if(clientes[id_user].estado == VALIDADO && strcmp(comando,"INICIAR-PARTIDA")){  iniciar_partida();
-    }else if(clientes[id_user].estado == JUGANDO){
-        if(strcmp(comando,"ESTADO")) estado(socket, clientes[*numClientes].id_partida, partidas);
-        else if(strcmp(comando,"CONQUISTAR")){
-           conquistar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
-        }else if(strcmp(comando,"ATACAR")){
-            atacar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
-        }else if(strcmp(comando,"REFORZAR")){
-             reforzar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
-        }else if(strcmp(comando,"PASAR"))        pasar(socket_cliente, clientes[*numClientes].id_partida, partidas);
-        else if(strcmp(comando,"SALIR"))        salirCliente(socket_cliente, &readfds, clientes, numClientes, partidas);
+    // 3. Ejecutar la acción según el estado del cliente
+    int id_partida_actual = clientes[id_user].id_partida;
+
+    if (clientes[id_user].estado == NO_VALIDADO || clientes[id_user].estado == ESPERANDO_PASS) {
+        if (strcmp(comando, "REGISTRO") == 0) {
+            registro(socket_cliente, user, contraseña);
+        } else if (strcmp(comando, "USUARIO") == 0) {
+            usuario(socket_cliente, user, &clientes[id_user]);
+        } else if (strcmp(comando, "PASSWORD") == 0) {
+            passwd(socket_cliente, contraseña, &clientes[id_user]);
+        } else {
+            char err[] = "-Err. Debe autenticarse o registrarse primero\n";
+            send(socket_cliente, err, strlen(err), 0);
+        }
+    } else if (clientes[id_user].estado == VALIDADO) {
+        if (strcmp(comando, "INICIAR-PARTIDA") == 0) {
+            iniciar_partida(socket_cliente, clientes, *numClientes, partidas, MAX_PARTIDAS);
+        } else if (strcmp(comando, "SALIR") == 0) {
+            salirCliente(socket_cliente, readfds, clientes, numClientes, partidas);
+        }
+    } else if (clientes[id_user].estado == JUGANDO) {
+        if (strcmp(comando, "ESTADO") == 0) {
+            estado(socket_cliente, id_partida_actual, partidas);
+        } else if (strcmp(comando, "CONQUISTAR") == 0) {
+            conquistar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
+        } else if (strcmp(comando, "ATACAR") == 0) {
+            atacar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
+        } else if (strcmp(comando, "REFORZAR") == 0) {
+            reforzar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
+        } else if (strcmp(comando, "PASAR") == 0) {
+            pasar(socket_cliente, id_partida_actual, partidas);
+        } else if (strcmp(comando, "SALIR") == 0) {
+            salirCliente(socket_cliente, readfds, clientes, numClientes, partidas);
+        }
     }
 }
 

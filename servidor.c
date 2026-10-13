@@ -1,6 +1,7 @@
 #include "servidor.h"
 
 int main(){
+    srand(time(NULL));
     signal(SIGINT, manejador);
     
 	//*	Descriptor del socket y buffer de datos                
@@ -55,6 +56,7 @@ int main(){
                                 clientes[numClientes].socket = socket_new_user;
                                 clientes[numClientes].estado = NO_VALIDADO; 
                                 clientes[numClientes].id_partida = -1; 
+                                clientes[numClientes].turno = 0;
                                 numClientes++;
                                 FD_SET(socket_new_user, &readfds); //* añadimos el socket del cliente para poder monitorizar sus mensajes
                                 
@@ -72,7 +74,7 @@ int main(){
                         memset(buffer, 0, sizeof(buffer));
                         fgets(buffer, sizeof(buffer),stdin);
                         //! Controlar si se ha introducido "SALIR", cerrando todos los sockets y finalmente saliendo del servidor
-                        if(strcmp(buffer,"SALIR\n") == 0 || ){
+                        if(strcmp(buffer,"SALIR\n") == 0 || server_encendido == 0){
                             salirServer(buffer,&readfds,clientes, &numClientes);
                             close(socket_maestro);
                             exit(-1);
@@ -83,7 +85,7 @@ int main(){
                         if(bytes_recibidos > 0){
                             buffer[bytes_recibidos] = '\0';
                             if(strcmp(buffer,"SALIR\n") == 0){ salirCliente(i,&readfds, clientes, &numClientes, partidas);} 
-                            else{ procesarMensaje(i, buffer, &readfds, clientes, &numClientes, partidas);}
+                            else if(clientes[numClientes].turno <=10){ procesarMensaje(i, buffer, &readfds, clientes, &numClientes, partidas);}
 
                         }else if(bytes_recibidos == 0){
                             printf("-Ok. El socket %d ha cerrado la conexión (Ctrl+C o desconexión)\n", i);
