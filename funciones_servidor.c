@@ -31,7 +31,6 @@ void manejador (int signum, sig_atomic_t server_encendido){
     printf("\n-Ok. Se ha recibido la señal sigint (ctrl +c)\n");
     signal(SIGINT,manejador);
     server_encendido = 0;
-    //Implementar lo que se desee realizar cuando ocurra la excepción de ctrl+c en el servidor
 }
 void salirServer(char *buffer, fd_set *readfds, struct Cliente clientes[], int *numClientes){
     for (int j = 0; j < *numClientes; j++){
@@ -86,58 +85,168 @@ void estado(int socket, int id_partida, struct Partida partidas[]){
 void conquistar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[]){
     struct Partida *p = &partidas[id_partida];
     int mi_id = (p->socket_j1 == socket) ? 1 : 2;
-    int socket_rival = (mi_id == 1) ? p->socket_j2 : p->socket_j1;
     int f_orig, c_orig, f_dest, c_dest;
+    char msg[150];
 
-    // 1. Validar turno
-    if (p->turno != mi_id) {
-        send(socket, "-Err. No es tu turno\n", 22, 0);
-        return;
-    }
 
-    // 2. Validar coordenadas, posesion y tropas y territorio 
-    if (!traducir_coordenada(origen_str, &f_orig, &c_orig) || !traducir_coordenada(destino_str, &f_dest, &c_dest)) {
-        send(socket, "-Err. Coordenadas inválidas\n", 28, 0);
-        return;
-    }
-    if (p->tablero[f_orig][c_orig].propietario != mi_id || p->tablero[f_orig][c_orig].tropas <= unidades_enviadas) {
-        send(socket, "-Err. Tropas insuficientes o territorio no propio\n", 51, 0);
-        return;
-    }
-    if (p->tablero[f_dest][c_dest].propietario != 0) {
-        send(socket, "-Err. El territorio destino ya está ocupado\n", 45, 0);
-        return;
-    }
-
-    // 3. Validar adyacencia (horizontal o vertical, distancia 1)
+    //* Variables de control de errores
+    int id_rival = (mi_id == 1) ? 2 : 1;
+    int socket_rival = (mi_id == 1) ? p->socket_j2 : p->socket_j1;
     int diff_f = abs(f_orig - f_dest);
     int diff_c = abs(c_orig - c_dest);
+
+    //* 1. Validar turno
+    if (p->turno != mi_id) {
+        send(socket, "-Err. No es tu turno\n", 22, 0);
+        return;}
+
+    //* 2. Validar coordenadas, posesion y tropas y territorio 
+    if (!traducir_coordenada(origen_str, &f_orig, &c_orig) || !traducir_coordenada(destino_str, &f_dest, &c_dest)) {
+        send(socket, "-Err. Coordenadas inválidas\n", 28, 0);
+        return;}
+    if (p->tablero[f_orig][c_orig].propietario != mi_id || p->tablero[f_orig][c_orig].tropas <= unidades_enviadas) {
+        send(socket, "-Err. Tropas insuficientes o territorio no propio\n", 51, 0);
+        return;}
+    if (p->tablero[f_dest][c_dest].propietario != 0) {
+        send(socket, "-Err. El territorio destino no es neutral\n", 43, 0);
+        return;}
     if (!((diff_f == 1 && diff_c == 0) || (diff_f == 0 && diff_c == 1))) {
         send(socket, "-Err. Los territorios no son adyacentes\n", 41, 0);
         return;
     }
 
-    // Ejecutar conquista
+    //* Ejecutar conquista
     p->tablero[f_orig][c_orig].tropas -= unidades_enviadas;
     p->tablero[f_dest][c_dest].propietario = mi_id;
     p->tablero[f_dest][c_dest].tropas = unidades_enviadas;
 
-    // Alternar turno
+    //* Alternar turno
     p->turno = (p->turno == 1) ? 2 : 1;
 
-    char msg[100];
     sprintf(msg, "+Ok. Territorio %s conquistado.\n", destino_str);
     send(socket, msg, strlen(msg), 0);
 
-    // Notificar al rival
+    //* Notificar al rival
     char msg_rival[] = "+Ok. El oponente ha movido. Es tu turno.\n";
     send(socket_rival, msg_rival, strlen(msg_rival), 0);
 }
 
+void atacar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[]){
+    struct Partida *p = &partidas[id_partida];
+    int mi_id = (p->socket_j1 == socket) ? 1 : 2;
+    int f_orig, c_orig, f_dest, c_dest;
+    int tropas_defensoras = p->tablero[f_dest][c_dest].tropas;
+    char msg[150];
+
+
+    //* Variables de control de errores
+    int id_rival = (mi_id == 1) ? 2 : 1;
+    int socket_rival = (mi_id == 1) ? p->socket_j2 : p->socket_j1;
+    int diff_f = abs(f_orig - f_dest);
+    int diff_c = abs(c_orig - c_dest);
+
+    //* 1. Validar turno
+    if (p->turno != mi_id) {
+        send(socket, "-Err. No es tu turno\n", 22, 0);
+        return;}
+
+    //* 2. Validar coordenadas, posesion y tropas y territorio 
+    if (!traducir_coordenada(origen_str, &f_orig, &c_orig) || !traducir_coordenada(destino_str, &f_dest, &c_dest)) {
+        send(socket, "-Err. Coordenadas inválidas\n", 28, 0);
+        return;}
+    if (p->tablero[f_orig][c_orig].propietario != mi_id || p->tablero[f_orig][c_orig].tropas <= unidades_enviadas) {
+        send(socket, "-Err. Tropas insuficientes o territorio no propio\n", 51, 0);
+        return;}
+    if (p->tablero[f_dest][c_dest].propietario != id_rival) {
+        send(socket, "-Err. El territorio destino no es de tu rival (¿quieres atacar?))\n", 45, 0);
+        return;}
+    if (!((diff_f == 1 && diff_c == 0) || (diff_f == 0 && diff_c == 1))) {
+        send(socket, "-Err. Los territorios no son adyacentes\n", 41, 0);
+        return;
+    }
+    
+    p->tablero[f_orig][c_orig].tropas -= unidades_enviadas;
+
+    if (unidades_enviadas > tropas_defensoras) {
+        // ATAQUE EXITOSO: Conquistas el territorio
+        p->tablero[f_dest][c_dest].propietario = mi_id;
+        p->tablero[f_dest][c_dest].tropas = unidades_enviadas; 
+        sprintf(msg, "+Ok. Has conquistado el territorio %s.\n", destino_str);
+    } 
+    else {
+        // ATAQUE FRACASADO: Pierdes las tropas enviadas, el defensor se queda como estaba
+        sprintf(msg, "+Ok. Has perdido el ataque contra %s.\n", destino_str);
+    }
+
+    p->turno = (p->turno == 1) ? 2 : 1;
+    send(socket, msg, strlen(msg), 0);
+}
+
+void reforzar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[]){
+    struct Partida *p = &partidas[id_partida];
+    int mi_id = (p->socket_j1 == socket) ? 1 : 2;
+    int f_orig, c_orig, f_dest, c_dest;
+    int tropas_defensoras = p->tablero[f_dest][c_dest].tropas;
+    char msg[150];
+
+    //* Variables de control de errores
+    int socket_rival = (mi_id == 1) ? p->socket_j2 : p->socket_j1;
+    int diff_f = abs(f_orig - f_dest);
+    int diff_c = abs(c_orig - c_dest);
+
+    //* 1. Validar turno
+    if (p->turno != mi_id) {
+        send(socket, "-Err. No es tu turno\n", 22, 0);
+        return;}
+
+    //* 2. Validar coordenadas, posesion y tropas y territorio 
+    if (!traducir_coordenada(origen_str, &f_orig, &c_orig) || !traducir_coordenada(destino_str, &f_dest, &c_dest)) {
+        send(socket, "-Err. Coordenadas inválidas\n", 28, 0);
+        return;}
+    if (p->tablero[f_orig][c_orig].propietario != mi_id || p->tablero[f_orig][c_orig].tropas <= unidades_enviadas) {
+        send(socket, "-Err. Tropas insuficientes o territorio no propio\n", 51, 0);
+        return;}
+    if (p->tablero[f_dest][c_dest].propietario != mi_id) {
+        send(socket, "-Err. El territorio destino no es de tu rival (¿quieres atacar?))\n", 45, 0);
+        return;}
+    if (!((diff_f == 1 && diff_c == 0) || (diff_f == 0 && diff_c == 1))) {
+        send(socket, "-Err. Los territorios no son adyacentes\n", 41, 0);
+        return;
+    }
+    
+    p->tablero[f_orig][c_orig].tropas -= unidades_enviadas;
+    p->tablero[f_dest][c_dest].tropas += unidades_enviadas;
+    sprintf(msg, "+Ok. Has enviado %d tropas al territorio %s.\n",unidades_enviadas, destino_str);
+    p->turno = (p->turno == 1) ? 2 : 1;
+    send(socket, msg, strlen(msg), 0);
+}
+
+void pasar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[]){
+    struct Partida *p = &partidas[id_partida];
+    int mi_id = (p->socket_j1 == socket) ? 1 : 2;
+    char msg[150];
+
+    //* Variables de control de errores
+    int socket_rival = (mi_id == 1) ? p->socket_j2 : p->socket_j1;
+
+    //* 1. Validar turno
+    if (p->turno != mi_id) {
+        send(socket, "-Err. No es tu turno\n", 22, 0);
+        return;}
+        
+    p->tablero[f_orig][c_orig].tropas -= unidades_enviadas;
+    p->tablero[f_dest][c_dest].tropas += unidades_enviadas;
+    sprintf(msg, "+Ok. Has enviado %d tropas al territorio %s.\n",unidades_enviadas, destino_str);
+    p->turno = (p->turno == 1) ? 2 : 1;
+    send(socket, msg, strlen(msg), 0);
+}
 
 void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct Cliente clientes[], int *numClientes, struct Partida partidas[]){
     char comando[50];
     char respuesta[MSG_SIZE];
+    char origen_str[100];
+    char destino_str[100];
+    int unidades_enviadas;
     memset(comando, 0, sizeof(comando));
     memset(respuesta, 0, sizeof(respuesta));
     int id_user = 0;
@@ -158,10 +267,10 @@ void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct C
         else if(strcmp(comando,"PASSWORD")) passwd();
     }else if(clientes[id_user].estado == VALIDADO && strcmp(comando,"INICIAR-PARTIDA")){  iniciar_partida();
     }else if(clientes[id_user].estado == JUGANDO){
-        if(strcmp(comando,"ESTADO")) estado();
-        else if(strcmp(comando,"CONQUISTAR"))   conquistar(socket_cliente, id_partida, origen_str, destino_str, unidades_enviadas, partidas);
-        else if(strcmp(comando,"ATACAR"))       atacar();
-        else if(strcmp(comando,"REFORZAR"))     reforzar();
+        if(strcmp(comando,"ESTADO")) estado(socket, clientes[*numClientes].id_partida, partidas);
+        else if(strcmp(comando,"CONQUISTAR"))   conquistar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
+        else if(strcmp(comando,"ATACAR"))       atacar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
+        else if(strcmp(comando,"REFORZAR"))     reforzar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
         else if(strcmp(comando,"PASAR"))        pasar();
         else if(strcmp(comando,"SALIR"))        salirCliente();
     }
@@ -172,59 +281,6 @@ void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct C
 
 //--------------------------------------------------------------------------------------------------------------------------
 
-        void atacar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_ataque){
-            struct Partida *p = &partidas[id_partida];
-            int mi_id = (p->socket_j1 == socket) ? 1 : 2;
-            int rival_id = (mi_id == 1) ? 2 : 1;
-            int f_orig, c_orig, f_dest, c_dest;
-
-            // Validar coordenadas de texto a números
-            if (!traducir_coordenada(origen_str, &f_orig, &c_orig) || !traducir_coordenada(destino_str, &f_dest, &c_dest)) {
-                //Envia a socket este mensaje que tiene una longitud de 28. 0-> envia de forma estandar
-                send(socket, "-Err. Coordenadas inválidas\n", 28, 0);
-                return;
-            }
-
-            // Validar origen propio y tropas suficientes
-            if (p->tablero[f_orig][c_orig].propietario != mi_id || p->tablero[f_orig][c_orig].tropas <= unidades_ataque) {
-                send(socket, "-Err. Tropas insuficientes en origen\n", 38, 0);
-                return;
-            }
-
-            // Validar que el destino sea del rival
-            if (p->tablero[f_dest][c_dest].propietario != rival_id) {
-                send(socket, "-Err. El destino no pertenece al enemigo\n", 41, 0);
-                return;
-            }
-
-            // Validar adyacencia
-            int diff_f = abs(f_orig - f_dest);
-            int diff_c = abs(c_orig - c_dest);
-            if (!((diff_f == 1 && diff_c == 0) || (diff_f == 0 && diff_c == 1))) {
-                send(socket, "-Err. Territorios no adyacentes\n", 33, 0);
-                return;
-            }
-
-            int tropas_defensoras = p->tablero[f_dest][c_dest].tropas;
-            char msg[150];
-
-            // Restamos siempre las unidades usadas en el ataque del origen
-            p->tablero[f_orig][c_orig].tropas -= unidades_ataque;
-
-            if (unidades_ataque > tropas_defensoras) {
-                // ATAQUE EXITOSO: Conquistas el territorio
-                p->tablero[f_dest][c_dest].propietario = mi_id;
-                p->tablero[f_dest][c_dest].tropas = unidades_ataque; // Las tropas atacantes ocupan la zona
-                sprintf(msg, "+Ok. Has conquistado el territorio %s.\n", destino_str);
-            } 
-            else {
-                // ATAQUE FRACASADO: Pierdes las tropas enviadas, el defensor se queda como estaba
-                sprintf(msg, "+Ok. Has perdido el ataque contra %s.\n", destino_str);
-            }
-
-            p->turno = (p->turno == 1) ? 2 : 1;
-            send(socket, msg, strlen(msg), 0);
-        }
         
 //--------------------------------------------------------------------------------------------------------------------------
 
