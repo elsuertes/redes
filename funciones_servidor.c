@@ -53,6 +53,17 @@ bool traducir_coordenada(char *coord, int *fila, int *col){
     return true;
 }
 
+void iniciar_partida(){
+    int j1 = 0,j2 = 0, cont =0;
+    for(cliente){
+        if(cliente[].estado == BUSCANDO_PARTIDA){
+            if(cont>2)  break;
+            cont++;
+            j1 += i;
+        }
+    }
+
+}
 
 void estado(int socket, int id_partida, struct Partida partidas[]){
     struct Partida *p = &partidas[id_partida];
@@ -221,7 +232,7 @@ void reforzar(int socket, int id_partida, char *origen_str, char *destino_str, i
     send(socket, msg, strlen(msg), 0);
 }
 
-void pasar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[]){
+void pasar(int socket, int id_partida, struct Partida partidas[]){
     struct Partida *p = &partidas[id_partida];
     int mi_id = (p->socket_j1 == socket) ? 1 : 2;
     char msg[150];
@@ -233,13 +244,12 @@ void pasar(int socket, int id_partida, char *origen_str, char *destino_str, int 
     if (p->turno != mi_id) {
         send(socket, "-Err. No es tu turno\n", 22, 0);
         return;}
-        
-    p->tablero[f_orig][c_orig].tropas -= unidades_enviadas;
-    p->tablero[f_dest][c_dest].tropas += unidades_enviadas;
-    sprintf(msg, "+Ok. Has enviado %d tropas al territorio %s.\n",unidades_enviadas, destino_str);
     p->turno = (p->turno == 1) ? 2 : 1;
+    sprintf(msg, "+Ok. turno pasado\n");
     send(socket, msg, strlen(msg), 0);
 }
+
+
 
 void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct Cliente clientes[], int *numClientes, struct Partida partidas[]){
     char comando[50];
@@ -268,22 +278,17 @@ void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct C
     }else if(clientes[id_user].estado == VALIDADO && strcmp(comando,"INICIAR-PARTIDA")){  iniciar_partida();
     }else if(clientes[id_user].estado == JUGANDO){
         if(strcmp(comando,"ESTADO")) estado(socket, clientes[*numClientes].id_partida, partidas);
-        else if(strcmp(comando,"CONQUISTAR"))   conquistar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
-        else if(strcmp(comando,"ATACAR"))       atacar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
-        else if(strcmp(comando,"REFORZAR"))     reforzar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
-        else if(strcmp(comando,"PASAR"))        pasar();
-        else if(strcmp(comando,"SALIR"))        salirCliente();
+        else if(strcmp(comando,"CONQUISTAR")){
+           conquistar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
+        }else if(strcmp(comando,"ATACAR")){
+            atacar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
+        }else if(strcmp(comando,"REFORZAR")){
+             reforzar(socket_cliente, clientes[*numClientes].id_partida, origen_str, destino_str, unidades_enviadas, partidas);
+        }else if(strcmp(comando,"PASAR"))        pasar(socket_cliente, clientes[*numClientes].id_partida, partidas);
+        else if(strcmp(comando,"SALIR"))        salirCliente(socket_cliente, &readfds, clientes, numClientes, partidas);
     }
 }
 
-/*
-        
 
-//--------------------------------------------------------------------------------------------------------------------------
-
-        
-//--------------------------------------------------------------------------------------------------------------------------
-
-*/
 
 
