@@ -99,11 +99,9 @@ int main(){
                 }
             }
 	    }
-
-	close(socket_maestro);
-	return 0;
-	
     }
+    close(socket_maestro);
+	return 0;
 }
 
 
