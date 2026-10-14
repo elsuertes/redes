@@ -95,9 +95,7 @@ int main(int argc, char *argv[]) {
                 bzero(buffer, sizeof(buffer));
                 fgets(buffer, sizeof(buffer), stdin);
 
-                // Eliminamos el salto de linea \n y \r al final de la cadena.
-                // \r\n lo usa Windows al pulsar Enter
-                buffer[strcspn(buffer, "\r\n")] = '\0';
+                buffer[strcspn(buffer, "\n")] = '\0';
 
                 //Nos aseguramos que el usuario no ha pulsado el Enter en blanco y enviamos mensaje a servidor
                 if(strlen(buffer) > 0){

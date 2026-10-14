@@ -8,7 +8,7 @@ int main(){
     signal(SIGINT, manejador);
     
 	//*	Descriptor del socket y buffer de datos                
-	bool on = true;
+	int on = 1;
 	struct sockaddr_in sockname, from;
     struct Cliente clientes[MAX_CLIENTS];
     struct Partida partidas[MAX_PARTIDAS];
@@ -83,10 +83,10 @@ int main(){
                         }
                     }else{  //! si no se ha introducido info por la terminal del server
                         memset(buffer, 0, sizeof(buffer));
-                        bytes_recibidos = recv(i,buffer,sizeof(buffer),0);
+                        bytes_recibidos = recv(i,buffer,sizeof(buffer)-1,0);
                         if(bytes_recibidos > 0){
                             buffer[bytes_recibidos] = '\0';
-                            if(strcmp(buffer,"SALIR\n") == 0) salirCliente(i,&readfds, clientes, &numClientes, partidas); 
+                            if(strcmp(buffer, "SALIR") == 0 || strcmp(buffer, "SALIR\n") == 0) salirCliente(i,&readfds, clientes, &numClientes, partidas); 
                             else    procesarMensaje(i, buffer, &readfds, clientes, &numClientes, partidas);
                         }else if(bytes_recibidos == 0){
                             printf("-Ok. El socket %d ha cerrado la conexión (Ctrl+C o desconexión)\n", i);
