@@ -4,16 +4,17 @@ volatile sig_atomic_t server_encendido = 1;
 
 
 int main(){
-    srand(time(NULL));
+    //* comportamiento de ctrl +c
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = manejador;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
+    sa.sa_handler = manejador;  //* asigna la funcion
+    sigemptyset(&sa.sa_mask);   //* no bloquear otras señales
+    sa.sa_flags = 0;            //* llamadas bloqueantes (ej:select) devuelven error
     sigaction(SIGINT, &sa, NULL);
-    
+
 	//*	Descriptor del socket y buffer de datos                
 	int on = 1;
+    srand(time(NULL));
 	struct sockaddr_in sockname, from;
     struct Cliente clientes[MAX_CLIENTS];
     struct Partida partidas[MAX_PARTIDAS];
@@ -21,9 +22,8 @@ int main(){
     memset(partidas,0,sizeof(partidas));
 	socklen_t from_len;
     fd_set readfds, auxfds; //* Descriptor de lectura y auxiliar
-    int socket_maestro, socket_new_user, ret, i, j, k, bytes_recibidos, salida;
+    int socket_maestro, socket_new_user, i, bytes_recibidos, salida;
     int numClientes = 0;
-    char identificador[MSG_SIZE];
     char buffer[MSG_SIZE];
 
     //* abrimos el socket en modo IPv4 y TCP
@@ -31,7 +31,7 @@ int main(){
 	if (socket_maestro == -1) { perror("-Err. No se puede abrir el socket cliente\n"); exit (EXIT_FAILURE);}
 
     //* evitamos el bloqueo del puerto
-    ret = setsockopt( socket_maestro, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    if(setsockopt( socket_maestro, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) == -1){ perror("-Err. Error en la operación setsockopt"); exit(EXIT_FAILURE); }  
 	sockname.sin_family = AF_INET;
 	sockname.sin_port = htons(2026);
 	sockname.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -53,14 +53,10 @@ int main(){
         //* Esperamos recibir mensajes de los clientes
         auxfds = readfds;
         salida = select(FD_SETSIZE,&auxfds,NULL,NULL,NULL);   //! Bloquea proceso hasta que algun descriptor esté para lectura (y modifica auxfds)       
-        
         if (!server_encendido) {
-            break;
-        }
-        if (salida < 0 && errno == EINTR) {
-            continue;
-        }
-
+            break;}
+        if (salida < 0 && errno == EINTR) { //! evitamos que al cerrar abruptamente tras ctrl+c se lo tome como un error
+            continue;}
         if(salida > 0){
             //* Buscamos el socket que ha establecido la comunicación
             for(i=0; i<FD_SETSIZE; i++){
@@ -94,7 +90,7 @@ int main(){
                         //! Controlar si se ha introducido "SALIR", cerrando todos los sockets y finalmente saliendo del servidor
                         if(strcmp(buffer,"SALIR\n") == 0 || server_encendido == 0){
                             server_encendido = 0;
-                            break;
+                            break; //* salimos del for para llamar a cerrar cliente
                         }
                     }else{  //! si no se ha introducido info por la terminal del server
                         memset(buffer, 0, sizeof(buffer));

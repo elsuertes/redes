@@ -118,12 +118,11 @@ int main(int argc, char *argv[]) {
                 int bytes = recv(sd, buffer_recv, sizeof(buffer_recv) - 1, 0);
 
                 if (bytes <= 0) {
-                    printf("\nEl servidor ha cerrado la conexión.\n");
+                    printf("\nEl servidor ha cerrado la conexión abruptamente.\n");
                     fin = 1;
                 } else {
                     printf("%s", buffer_recv);
-
-                    // Mensajes especiales de desconexión por parte del servidor
+                    //* Mensajes especiales de desconexión por parte del servidor
                     if (strstr(buffer_recv, "-Err. Desconexión servidor") != NULL || 
                         strstr(buffer_recv, "-Err. Demasiados clientes") != NULL) {
                         fin = 1;
