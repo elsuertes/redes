@@ -5,7 +5,12 @@ volatile sig_atomic_t server_encendido = 1;
 
 int main(){
     srand(time(NULL));
-    signal(SIGINT, manejador);
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = manejador;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, NULL);
     
 	//*	Descriptor del socket y buffer de datos                
 	int on = 1;
@@ -44,10 +49,18 @@ int main(){
     FD_ZERO(&auxfds);
     FD_SET(socket_maestro,&readfds);
     FD_SET(0,&readfds);
-	while(1){    
+	while(server_encendido){    
         //* Esperamos recibir mensajes de los clientes
         auxfds = readfds;
         salida = select(FD_SETSIZE,&auxfds,NULL,NULL,NULL);   //! Bloquea proceso hasta que algun descriptor esté para lectura (y modifica auxfds)       
+        
+        if (!server_encendido) {
+            break;
+        }
+        if (salida < 0 && errno == EINTR) {
+            continue;
+        }
+
         if(salida > 0){
             //* Buscamos el socket que ha establecido la comunicación
             for(i=0; i<FD_SETSIZE; i++){
@@ -77,9 +90,8 @@ int main(){
                         fgets(buffer, sizeof(buffer),stdin);
                         //! Controlar si se ha introducido "SALIR", cerrando todos los sockets y finalmente saliendo del servidor
                         if(strcmp(buffer,"SALIR\n") == 0 || server_encendido == 0){
-                            salirServer(buffer,&readfds,clientes, &numClientes);
-                            close(socket_maestro);
-                            exit(-1);
+                            server_encendido = 0;
+                            break;
                         }
                     }else{  //! si no se ha introducido info por la terminal del server
                         memset(buffer, 0, sizeof(buffer));
@@ -100,9 +112,7 @@ int main(){
             }
 	    }
     }
+    salirServer(buffer, &readfds, clientes, &numClientes);
     close(socket_maestro);
 	return 0;
 }
-
-
-

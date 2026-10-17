@@ -13,6 +13,45 @@
 #define MSG_SIZE 250
 #define PUERTO 2026
 
+enum EstadoMenu {
+    MENU_NO_VALIDADO,
+    MENU_ESPERANDO_PASS,
+    MENU_VALIDADO,
+    MENU_ESPERANDO_RIVAL,
+    MENU_JUGANDO
+};
+
+void mostrarMenu(enum EstadoMenu estado) {
+    printf("\n--- COMANDOS DISPONIBLES ---\n");
+    switch (estado) {
+        case MENU_NO_VALIDADO:
+            printf("  USUARIO <usuario>\n");
+            printf("  REGISTRO <usuario> <password>\n");
+            printf("  SALIR\n");
+            break;
+        case MENU_ESPERANDO_PASS:
+            printf("  PASSWORD <password>\n");
+            printf("  SALIR\n");
+            break;
+        case MENU_VALIDADO:
+            printf("  INICIAR-PARTIDA\n");
+            printf("  SALIR\n");
+            break;
+        case MENU_ESPERANDO_RIVAL:
+            printf("  (Esperando rival...) SALIR\n");
+            break;
+        case MENU_JUGANDO:
+            printf("  ESTADO\n");
+            printf("  CONQUISTAR <origen> <destino> <unidades>\n");
+            printf("  ATACAR <origen> <destino> <unidades>\n");
+            printf("  REFORZAR <origen> <destino> <unidades>\n");
+            printf("  PASAR\n");
+            printf("  SALIR\n");
+            break;
+    }
+    printf("----------------------------\n");
+}
+
 int main(int argc, char *argv[]) {
     int sd;
     struct sockaddr_in sockname;
@@ -21,6 +60,7 @@ int main(int argc, char *argv[]) {
     fd_set readfds, auxfds;
     int salida;
     int fin = 0;
+    enum EstadoMenu estado_menu = MENU_NO_VALIDADO;
 
     // 1. Abrir el socket TCP
         
@@ -86,6 +126,20 @@ int main(int argc, char *argv[]) {
                         strstr(buffer, "-Err. Demasiados clientes") != NULL) {
                         fin = 1;
 
+                    } else {
+                        if (strstr(buffer, "+Ok. Usuario correcto") != NULL) {
+                            estado_menu = MENU_ESPERANDO_PASS;
+                        } else if (strstr(buffer, "-Err. Contraseña incorrecta") != NULL) {
+                            estado_menu = MENU_NO_VALIDADO;
+                        } else if (strstr(buffer, "+Ok. Usuario validado") != NULL ||
+                                   strstr(buffer, "+Ok. Tu oponente ha terminado la partida") != NULL) {
+                            estado_menu = MENU_VALIDADO;
+                        } else if (strstr(buffer, "+Ok. Esperando a otro jugador") != NULL) {
+                            estado_menu = MENU_ESPERANDO_RIVAL;
+                        } else if (strstr(buffer, "+Ok. Partida encontrada") != NULL) {
+                            estado_menu = MENU_JUGANDO;
+                        }
+                        mostrarMenu(estado_menu);
                     }
                 }
             }

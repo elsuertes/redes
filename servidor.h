@@ -14,6 +14,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <time.h>
+#include <errno.h>
 
 #define PUERTO 2026
 #define MSG_SIZE 250
@@ -57,6 +58,3 @@ void manejador(int signum);
 void salirServer(char *buffer, fd_set *readfds, struct Cliente clientes[], int *numClientes);
 
 #endif
-
-
-
