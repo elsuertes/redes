@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <signal.h>
 #define MSG_SIZE 250
+#define RECV_SIZE 2048
 #define PUERTO 2026
 
 enum EstadoMenu {
@@ -56,6 +57,7 @@ int main(int argc, char *argv[]) {
     int sd;
     struct sockaddr_in sockname;
     char buffer[MSG_SIZE];
+    char buffer_recv[RECV_SIZE];
     socklen_t len_sockname;
     fd_set readfds, auxfds;
     int salida;
@@ -112,31 +114,32 @@ int main(int argc, char *argv[]) {
 
             // Caso A: Mensaje recibido desde el servidor
             if (FD_ISSET(sd, &auxfds)) {
-                bzero(buffer, sizeof(buffer));
-                int bytes = recv(sd, buffer, sizeof(buffer) - 1, 0);
+                bzero(buffer_recv, sizeof(buffer_recv));
+                int bytes = recv(sd, buffer_recv, sizeof(buffer_recv) - 1, 0);
 
                 if (bytes <= 0) {
                     printf("\nEl servidor ha cerrado la conexión.\n");
                     fin = 1;
                 } else {
-                    printf("%s", buffer);
+                    printf("%s", buffer_recv);
 
                     // Mensajes especiales de desconexión por parte del servidor
-                    if (strstr(buffer, "-Err. Desconexión servidor") != NULL || 
-                        strstr(buffer, "-Err. Demasiados clientes") != NULL) {
+                    if (strstr(buffer_recv, "-Err. Desconexión servidor") != NULL || 
+                        strstr(buffer_recv, "-Err. Demasiados clientes") != NULL) {
                         fin = 1;
 
                     } else {
-                        if (strstr(buffer, "+Ok. Usuario correcto") != NULL) {
+                        if (strstr(buffer_recv, "+Ok. Usuario correcto") != NULL) {
                             estado_menu = MENU_ESPERANDO_PASS;
-                        } else if (strstr(buffer, "-Err. Contraseña incorrecta") != NULL) {
+                        } else if (strstr(buffer_recv, "-Err. Contraseña incorrecta") != NULL) {
                             estado_menu = MENU_NO_VALIDADO;
-                        } else if (strstr(buffer, "+Ok. Usuario validado") != NULL ||
-                                   strstr(buffer, "+Ok. Tu oponente ha terminado la partida") != NULL) {
+                        } else if (strstr(buffer_recv, "+Ok. Usuario validado") != NULL ||
+                                   strstr(buffer_recv, "+Ok. Tu oponente ha terminado la partida") != NULL ||
+                                   strstr(buffer_recv, "+Ok. Partida finalizada") != NULL) {
                             estado_menu = MENU_VALIDADO;
-                        } else if (strstr(buffer, "+Ok. Esperando a otro jugador") != NULL) {
+                        } else if (strstr(buffer_recv, "+Ok. Esperando a otro jugador") != NULL) {
                             estado_menu = MENU_ESPERANDO_RIVAL;
-                        } else if (strstr(buffer, "+Ok. Partida encontrada") != NULL) {
+                        } else if (strstr(buffer_recv, "+Ok. Partida encontrada") != NULL) {
                             estado_menu = MENU_JUGANDO;
                         }
                         mostrarMenu(estado_menu);
@@ -153,7 +156,7 @@ int main(int argc, char *argv[]) {
 
                 //Nos aseguramos que el usuario no ha pulsado el Enter en blanco y enviamos mensaje a servidor
                 if(strlen(buffer) > 0){
-                    send(sd, buffer, sizeof(buffer), 0);
+                    send(sd, buffer, strlen(buffer), 0);
                 }
                 
                 // Si el comando introducido fue SALIR, cerramos tras enviar

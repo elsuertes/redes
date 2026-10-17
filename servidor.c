@@ -66,7 +66,9 @@ int main(){
             for(i=0; i<FD_SETSIZE; i++){
                 if(FD_ISSET(i, &auxfds)) {
                     if(i == socket_maestro){
-                        if((socket_new_user = accept(socket_maestro, (struct sockaddr *)&from, &from_len)) == -1){ perror("-Err. Error aceptando peticiones");}
+                        if((socket_new_user = accept(socket_maestro, (struct sockaddr *)&from, &from_len)) == -1){ 
+                            perror("-Err. Error aceptando peticiones");
+                        } else {
                             if(numClientes < MAX_CLIENTS){ 
                                 clientes[numClientes].socket = socket_new_user;
                                 clientes[numClientes].estado = NO_VALIDADO; 
@@ -82,9 +84,10 @@ int main(){
                             }else{
                                 memset(buffer, 0, sizeof(buffer));
                                 strcpy(buffer,"-Err. Demasiados clientes conectados\n");
-                                send(socket_new_user,buffer,sizeof(buffer),0);
+                                send(socket_new_user,buffer,strlen(buffer),0);
                                 close(socket_new_user);
                             }   
+                        }
                     }else if(i == 0){       //* Se ha introducido info por la terminal del server
                         memset(buffer, 0, sizeof(buffer));
                         fgets(buffer, sizeof(buffer),stdin);
