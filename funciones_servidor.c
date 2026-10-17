@@ -104,7 +104,7 @@ void usuario(int socket, char *nombre_usuario, struct Cliente *clientes, int num
     // Evitar inicio de sesión duplicado si ya está conectado
     for (int i = 0; i < numClientes; i++) {
         if (todos_clientes[i].estado != NO_VALIDADO && todos_clientes[i].estado != DESCONECTADO && strcmp(todos_clientes[i].username, nombre_usuario) == 0) {
-            char err[] = "-Err. El usuario ya ha iniciado sesión en otra terminal\n";
+            char err[] = "-Err. Usuario incorrecto\n";
             send(socket, err, strlen(err), 0);
             return;
         }
@@ -112,7 +112,7 @@ void usuario(int socket, char *nombre_usuario, struct Cliente *clientes, int num
 
     FILE *f = fopen("usuarios.txt", "r");
     if (f == NULL) {
-        char err[] = "-Err. No hay usuarios registrados en el sistema\n";
+        char err[] = "-Err. Usuario incorrecto\n";
         send(socket, err, strlen(err), 0);
         return;}
 
@@ -130,10 +130,10 @@ void usuario(int socket, char *nombre_usuario, struct Cliente *clientes, int num
         strncpy(clientes->username, nombre_usuario, sizeof(clientes->username) - 1);
         clientes->username[sizeof(clientes->username) - 1] = '\0';
         clientes->estado = ESPERANDO_PASS;
-        char ok[] = "+Ok. Usuario correcto. Introduzca contraseña\n";
+        char ok[] = "+Ok. Usuario correcto\n";
         send(socket, ok, strlen(ok), 0);
     }else{
-        char err[] = "-Err. Usuario no encontrado\n";
+        char err[] = "-Err. Usuario incorrecto\n";
         send(socket, err, strlen(err), 0);
     }
 }
@@ -145,7 +145,7 @@ void passwd(int socket, char *password, struct Cliente *clientes) {
         return;}
     FILE *f = fopen("usuarios.txt", "r");
     if (f == NULL) {
-        char err[] = "-Err. Error interno al verificar contraseña\n";
+        char err[] = "-Err. Error en la validación\n";
         send(socket, err, strlen(err), 0);
         return;}
 
@@ -167,12 +167,13 @@ void passwd(int socket, char *password, struct Cliente *clientes) {
     } else {
         // Vuelve a NO_VALIDADO para obligar a reiniciar el flujo si falla
         clientes->estado = NO_VALIDADO;
-        char err[] = "-Err. Contraseña incorrecta\n";
+        char err[] = "-Err. Error en la validación\n";
         send(socket, err, strlen(err), 0);
     }
 }
 
-void verificar_fin_partida(int id_partida, struct Partida partidas[], struct Cliente clientes[], int numClientes) {
+// Actualizada para añadir los mensajes a los buffers en lugar de enviarlos directamente
+void verificar_fin_partida(int id_partida, struct Partida partidas[], struct Cliente clientes[], int numClientes, int socket_cliente, char *msg_out, char *msg_rival_out) {
     struct Partida *p = &partidas[id_partida];
     if (!p->activa) return;
 
@@ -193,11 +194,10 @@ void verificar_fin_partida(int id_partida, struct Partida partidas[], struct Cli
     bool finalizar = false;
     int ganador = 0; // 0 empate, 1 J1, 2 J2
 
-    // Fin si J2 no tiene territorios o si J1 no tiene territorios o se alcanzó límite global de turnos
-    if (t2 == 0) { finalizar = true; ganador = 1; }
-    else if (t1 == 0) { finalizar = true; ganador = 2; }
+    // Fin si un jugador controla los 25 territorios, si alguien se queda sin territorios o si ambos alcanzan 10 turnos
+    if (t2 == 0 || t1 == 25) { finalizar = true; ganador = 1; }
+    else if (t1 == 0 || t2 == 25) { finalizar = true; ganador = 2; }
     else {
-        // Comprobar si ambos superaron 10 turnos totales
         int cj1 = -1, cj2 = -1;
         for (int i = 0; i < numClientes; i++) {
             if (clientes[i].socket == p->socket_j1) cj1 = i;
@@ -219,17 +219,24 @@ void verificar_fin_partida(int id_partida, struct Partida partidas[], struct Cli
         p->activa = false;
         char msg1[200], msg2[200];
         if (ganador == 1) {
-            sprintf(msg1, "+Ok. Partida finalizada. ¡Has ganado!\n");
-            sprintf(msg2, "+Ok. Partida finalizada. Has perdido.\n");
+            sprintf(msg1, "+Ok. Partida finalizada. ¡Has ganado! (Territorios: %d a %d)\n", t1, t2);
+            sprintf(msg2, "+Ok. Partida finalizada. Has perdido. (Territorios: %d a %d)\n", t2, t1);
         } else if (ganador == 2) {
-            sprintf(msg1, "+Ok. Partida finalizada. Has perdido.\n");
-            sprintf(msg2, "+Ok. Partida finalizada. ¡Has ganado!\n");
+            sprintf(msg1, "+Ok. Partida finalizada. Has perdido. (Territorios: %d a %d)\n", t1, t2);
+            sprintf(msg2, "+Ok. Partida finalizada. ¡Has ganado! (Territorios: %d a %d)\n", t2, t1);
         } else {
-            sprintf(msg1, "+Ok. Partida finalizada. Empate.\n");
-            sprintf(msg2, "+Ok. Partida finalizada. Empate.\n");
+            sprintf(msg1, "+Ok. Partida finalizada. Empate. (Territorios: %d a %d)\n", t1, t2);
+            sprintf(msg2, "+Ok. Partida finalizada. Empate. (Territorios: %d a %d)\n", t2, t1);
         }
-        send(p->socket_j1, msg1, strlen(msg1), 0);
-        send(p->socket_j2, msg2, strlen(msg2), 0);
+
+        int mi_id = (p->socket_j1 == socket_cliente) ? 1 : 2;
+        if (mi_id == 1) {
+            strcat(msg_out, msg1);
+            strcat(msg_rival_out, msg2);
+        } else {
+            strcat(msg_out, msg2);
+            strcat(msg_rival_out, msg1);
+        }
 
         for (int i = 0; i < numClientes; i++) {
             if (clientes[i].socket == p->socket_j1 || clientes[i].socket == p->socket_j2) {
@@ -263,7 +270,7 @@ void iniciar_partida(int socket_cliente, struct Cliente clientes[], int numClien
     }
     //* Si nadie más está buscando, se le informa 
     if (idx_rival == -1){
-        char espera[] = "+Ok. Esperando a otro jugador...\n";
+        char espera[] = "+Ok. Esperando otro jugador\n";
         send(socket_cliente, espera, strlen(espera), 0);
         return;
     }
@@ -316,8 +323,8 @@ void iniciar_partida(int socket_cliente, struct Cliente clientes[], int numClien
     clientes[idx_solicitante].turno = 0;
 
     //* Notificar el inicio a ambos jugadores
-    char msg_j1[] = "+Ok. Partida encontrada. Eres el Jugador 1 (J1). Tu turno.\n";
-    char msg_j2[] = "+Ok. Partida encontrada. Eres el Jugador 2 (J2). Turno de tu rival.\n";
+    char msg_j1[] = "+Ok. Empieza la partida. Eres el Jugador 1 (J1). Tu turno.\n";
+    char msg_j2[] = "+Ok. Empieza la partida. Eres el Jugador 2 (J2). Turno de tu rival.\n";
     send(partidas[id_p].socket_j1, msg_j1, strlen(msg_j1), 0);
     send(partidas[id_p].socket_j2, msg_j2, strlen(msg_j2), 0);
 }
@@ -350,14 +357,11 @@ void estado(int socket, int id_partida, struct Partida partidas[]){
     send(socket, buffer, strlen(buffer), 0);
 }
 
-bool conquistar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[], struct Cliente clientes[], int numClientes){
+// Ahora recibe los buffers msg_out y msg_rival_out
+bool conquistar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[], char *msg_out, char *msg_rival_out){
     struct Partida *p = &partidas[id_partida];
     int mi_id = (p->socket_j1 == socket) ? 1 : 2;
     int f_orig, c_orig, f_dest, c_dest;
-    char msg[150];
-
-    //* Variables de control de errores
-    int socket_rival = (mi_id == 1) ? p->socket_j2 : p->socket_j1;
 
     //* 1. Validar turno
     if (p->turno != mi_id) {
@@ -399,26 +403,19 @@ bool conquistar(int socket, int id_partida, char *origen_str, char *destino_str,
     //* Alternar turno
     p->turno = (p->turno == 1) ? 2 : 1;
 
-    sprintf(msg, "+Ok. Territorio %s conquistado.\n", destino_str);
-    send(socket, msg, strlen(msg), 0);
-
-    //* Notificar al rival
-    char msg_rival[] = "+Ok. El oponente ha movido. Es tu turno.\n";
-    send(socket_rival, msg_rival, strlen(msg_rival), 0);
-
-    verificar_fin_partida(id_partida, partidas, clientes, numClientes);
+    // Concatenar el resultado a los buffers de salida
+    sprintf(msg_out, "+Ok. Territorio %s conquistado.\n", destino_str);
+    strcpy(msg_rival_out, "+Ok. El oponente ha movido. Es tu turno.\n");
     return true;
 }
 
-bool atacar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[], struct Cliente clientes[], int numClientes){
+bool atacar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[], char *msg_out, char *msg_rival_out){
     struct Partida *p = &partidas[id_partida];
     int mi_id = (p->socket_j1 == socket) ? 1 : 2;
     int f_orig, c_orig, f_dest, c_dest;
-    char msg[150];
 
     //* Variables de control de errores
     int id_rival = (mi_id == 1) ? 2 : 1;
-    int socket_rival = (mi_id == 1) ? p->socket_j2 : p->socket_j1;
 
     //* 1. Validar turno
     if (p->turno != mi_id) {
@@ -456,35 +453,26 @@ bool atacar(int socket, int id_partida, char *origen_str, char *destino_str, int
     }
 
     if (unidades_enviadas > tropas_defensoras) {
-        // ATAQUE EXITOSO: Conquistas el territorio restando las bajas defensoras
+        // ATAQUE EXITOSO: Conquistas el territorio
         p->tablero[f_dest][c_dest].propietario = mi_id;
-        p->tablero[f_dest][c_dest].tropas = unidades_enviadas - tropas_defensoras; 
-        sprintf(msg, "+Ok. Has conquistado el territorio %s.\n", destino_str);
+        p->tablero[f_dest][c_dest].tropas = unidades_enviadas; 
+        sprintf(msg_out, "+Ok. Has conquistado el territorio %s.\n", destino_str);
+        sprintf(msg_rival_out, "+Ok. El oponente ha conquistado tu territorio %s. Es tu turno.\n", destino_str);
     } 
     else {
         // ATAQUE FRACASADO: Pierdes las tropas enviadas, el defensor se queda como estaba
-        sprintf(msg, "+Ok. Has perdido el ataque contra %s.\n", destino_str);
+        sprintf(msg_out, "+Ok. Has perdido el ataque contra %s.\n", destino_str);
+        sprintf(msg_rival_out, "+Ok. El oponente ha fracasado atacando tu territorio %s. Es tu turno.\n", destino_str);
     }
 
     p->turno = (p->turno == 1) ? 2 : 1;
-    send(socket, msg, strlen(msg), 0);
-
-    //* Notificar al rival
-    char msg_rival[] = "+Ok. El oponente ha movido. Es tu turno.\n";
-    send(socket_rival, msg_rival, strlen(msg_rival), 0);
-
-    verificar_fin_partida(id_partida, partidas, clientes, numClientes);
     return true;
 }
 
-bool reforzar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[], struct Cliente clientes[], int numClientes){
+bool reforzar(int socket, int id_partida, char *origen_str, char *destino_str, int unidades_enviadas, struct Partida partidas[], char *msg_out, char *msg_rival_out){
     struct Partida *p = &partidas[id_partida];
     int mi_id = (p->socket_j1 == socket) ? 1 : 2;
     int f_orig, c_orig, f_dest, c_dest;
-    char msg[150];
-
-    //* Variables de control de errores
-    int socket_rival = (mi_id == 1) ? p->socket_j2 : p->socket_j1;
 
     //* 1. Validar turno
     if (p->turno != mi_id) {
@@ -520,40 +508,26 @@ bool reforzar(int socket, int id_partida, char *origen_str, char *destino_str, i
         p->tablero[f_orig][c_orig].propietario = 0;
     }
     p->tablero[f_dest][c_dest].tropas += unidades_enviadas;
-    sprintf(msg, "+Ok. Territorio reforzado.\n");
+    
     p->turno = (p->turno == 1) ? 2 : 1;
-    send(socket, msg, strlen(msg), 0);
-
-    //* Notificar al rival
-    char msg_rival[] = "+Ok. El oponente ha movido. Es tu turno.\n";
-    send(socket_rival, msg_rival, strlen(msg_rival), 0);
-
-    verificar_fin_partida(id_partida, partidas, clientes, numClientes);
+    sprintf(msg_out, "+Ok. Territorio reforzado.\n");
+    strcpy(msg_rival_out, "+Ok. El oponente ha movido. Es tu turno.\n");
     return true;
 }
 
-bool pasar(int socket, int id_partida, struct Partida partidas[], struct Cliente clientes[], int numClientes){
+bool pasar(int socket, int id_partida, struct Partida partidas[], char *msg_out, char *msg_rival_out){
     struct Partida *p = &partidas[id_partida];
     int mi_id = (p->socket_j1 == socket) ? 1 : 2;
-    char msg[150];
-
-    //* Variables de control de errores
-    int socket_rival = (mi_id == 1) ? p->socket_j2 : p->socket_j1;
 
     //* 1. Validar turno
     if (p->turno != mi_id) {
         char err[] = "-Err. No es tu turno\n";
         send(socket, err, strlen(err), 0);
         return false;}
+
     p->turno = (p->turno == 1) ? 2 : 1;
-    sprintf(msg, "+Ok. turno pasado\n");
-    send(socket, msg, strlen(msg), 0);
-
-    //* Notificar al rival
-    char msg_rival[] = "+Ok. El oponente ha pasado turno. Es tu turno.\n";
-    send(socket_rival, msg_rival, strlen(msg_rival), 0);
-
-    verificar_fin_partida(id_partida, partidas, clientes, numClientes);
+    sprintf(msg_out, "+Ok. turno pasado\n");
+    strcpy(msg_rival_out, "+Ok. El oponente ha pasado turno. Es tu turno.\n");
     return true;
 }
 
@@ -575,8 +549,8 @@ void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct C
     memset(origen_str, 0, sizeof(origen_str));
     memset(destino_str, 0, sizeof(destino_str));
     memset(aux, 0, sizeof(aux));
-    if (strlen(buffer) <= 2) return;
-    buffer[strcspn(buffer, "\n")] = '\0';
+    buffer[strcspn(buffer, "\r\n")] = '\0';
+    if (strlen(buffer) == 0) return;
     //* Identificar el índice del cliente en el array
     int id_user = -1;
     for (int i = 0; i < *numClientes; i++){
@@ -658,22 +632,38 @@ void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct C
                 send(socket_cliente, limite, strlen(limite), 0);
                 return;
             }
+
+            char msg_accion[1024] = "";
+            char msg_rival[1024] = "";
             bool ok = false;
+
             if (strcmp(comando, "CONQUISTAR") == 0) {
-                ok = conquistar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas, clientes, *numClientes);
+                ok = conquistar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas, msg_accion, msg_rival);
             } else if (strcmp(comando, "ATACAR") == 0) {
-                ok = atacar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas, clientes, *numClientes);
+                ok = atacar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas, msg_accion, msg_rival);
             } else if (strcmp(comando, "REFORZAR") == 0) {
-                ok = reforzar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas, clientes, *numClientes);
+                ok = reforzar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas, msg_accion, msg_rival);
             } else if (strcmp(comando, "PASAR") == 0) {
-                ok = pasar(socket_cliente, id_partida_actual, partidas, clientes, *numClientes);
+                ok = pasar(socket_cliente, id_partida_actual, partidas, msg_accion, msg_rival);
             }
+
             if (ok) {
                 clientes[id_user].turno++;
                 //* avisar de cuántos turnos le quedan
                 char aviso[100];
                 snprintf(aviso, sizeof(aviso), "+Ok. Turno %d/10 consumido.\n", clientes[id_user].turno);
-                send(socket_cliente, aviso, strlen(aviso), 0);
+                strcat(msg_accion, aviso);
+                
+                // Comprobar fin y añadir mensajes si la partida finaliza
+                verificar_fin_partida(id_partida_actual, partidas, clientes, *numClientes, socket_cliente, msg_accion, msg_rival);
+
+                // Enviar todo el bloque concatenado a ambos jugadores
+                send(socket_cliente, msg_accion, strlen(msg_accion), 0);
+                
+                if (strlen(msg_rival) > 0) {
+                    int socket_rival = (partidas[id_partida_actual].socket_j1 == socket_cliente) ? partidas[id_partida_actual].socket_j2 : partidas[id_partida_actual].socket_j1;
+                    send(socket_rival, msg_rival, strlen(msg_rival), 0);
+                }
             }
 
         } else if (strcmp(comando, "SALIR") == 0) {

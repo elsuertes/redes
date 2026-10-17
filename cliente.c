@@ -131,15 +131,18 @@ int main(int argc, char *argv[]) {
                     } else {
                         if (strstr(buffer_recv, "+Ok. Usuario correcto") != NULL) {
                             estado_menu = MENU_ESPERANDO_PASS;
-                        } else if (strstr(buffer_recv, "-Err. Contraseña incorrecta") != NULL) {
+                        } else if (strstr(buffer_recv, "-Err. Error en la validación") != NULL ||
+                                   strstr(buffer_recv, "-Err. Contraseña incorrecta") != NULL) {
                             estado_menu = MENU_NO_VALIDADO;
                         } else if (strstr(buffer_recv, "+Ok. Usuario validado") != NULL ||
                                    strstr(buffer_recv, "+Ok. Tu oponente ha terminado la partida") != NULL ||
                                    strstr(buffer_recv, "+Ok. Partida finalizada") != NULL) {
                             estado_menu = MENU_VALIDADO;
-                        } else if (strstr(buffer_recv, "+Ok. Esperando a otro jugador") != NULL) {
+                        } else if (strstr(buffer_recv, "+Ok. Esperando otro jugador") != NULL ||
+                                   strstr(buffer_recv, "+Ok. Esperando a otro jugador") != NULL) {
                             estado_menu = MENU_ESPERANDO_RIVAL;
-                        } else if (strstr(buffer_recv, "+Ok. Partida encontrada") != NULL) {
+                        } else if (strstr(buffer_recv, "+Ok. Empieza la partida") != NULL ||
+                                   strstr(buffer_recv, "+Ok. Partida encontrada") != NULL) {
                             estado_menu = MENU_JUGANDO;
                         }
                         mostrarMenu(estado_menu);
