@@ -462,4 +462,120 @@ void procesarMensaje(int socket_cliente, char *buffer, fd_set *readfds, struct C
     char origen_str[100];
     char destino_str[100];
     char aux[100];
-    int unidades
+    int unidades_enviadas = 0;
+    memset(comando, 0, sizeof(comando));
+    memset(respuesta, 0, sizeof(respuesta));
+    memset(user, 0, sizeof(user));
+    memset(contraseña, 0, sizeof(contraseña));
+    memset(origen_str, 0, sizeof(origen_str));
+    memset(destino_str, 0, sizeof(destino_str));
+    memset(aux, 0, sizeof(aux));
+    if (strlen(buffer) <= 2) return;
+    buffer[strcspn(buffer, "\n")] = '\0';
+    //* Identificar el índice del cliente en el array
+    int id_user = -1;
+    for (int i = 0; i < *numClientes; i++){
+        if (clientes[i].socket == socket_cliente){
+            id_user = i;
+            break;
+        }
+    }
+    if (id_user == -1) return;
+
+  // Extraer COMANDO
+    char *token = strtok(buffer, " ");
+    if (token == NULL) return;
+    strncpy(comando, token, sizeof(comando) - 1);
+    if (strcmp(comando, "REGISTRO") == 0) {
+        token = strtok(NULL, " ");
+        if (token) strncpy(user, token, sizeof(user) - 1);
+        token = strtok(NULL, " ");
+        if (token) strncpy(contraseña, token, sizeof(contraseña) - 1);
+    } else if (strcmp(comando, "USUARIO") == 0) {
+        token = strtok(NULL, " ");
+        if (token) strncpy(user, token, sizeof(user) - 1);
+    } else if (strcmp(comando, "PASSWORD") == 0) {
+        token = strtok(NULL, " ");
+        if (token) strncpy(contraseña, token, sizeof(contraseña) - 1);
+    } else if (strcmp(comando, "CONQUISTAR") == 0 || strcmp(comando, "ATACAR") == 0 || strcmp(comando, "REFORZAR") == 0) {
+        token = strtok(NULL, " ");
+        if (token) strncpy(origen_str, token, sizeof(origen_str) - 1);
+        token = strtok(NULL, " ");
+        if (token) strncpy(destino_str, token, sizeof(destino_str) - 1);
+        token = strtok(NULL, " ");
+        if (token) {
+            strncpy(aux, token, sizeof(aux) - 1);
+            unidades_enviadas = atoi(aux);
+        }
+    }
+
+    // 3. Ejecutar la acción según el estado del cliente
+    int id_partida_actual = clientes[id_user].id_partida;
+
+    if (clientes[id_user].estado == NO_VALIDADO || clientes[id_user].estado == ESPERANDO_PASS) {
+        if (strcmp(comando, "REGISTRO") == 0) {
+            registro(socket_cliente, user, contraseña);
+        } else if (strcmp(comando, "USUARIO") == 0) {
+            usuario(socket_cliente, user, &clientes[id_user]);
+        } else if (strcmp(comando, "PASSWORD") == 0) {
+            passwd(socket_cliente, contraseña, &clientes[id_user]);
+        } else {
+            char err[] = "-Err. Debe autenticarse o registrarse primero\n";
+            send(socket_cliente, err, strlen(err), 0);
+        }
+    } else if (clientes[id_user].estado == VALIDADO) {
+        if (strcmp(comando, "INICIAR-PARTIDA") == 0) {
+            iniciar_partida(socket_cliente, clientes, *numClientes, partidas, MAX_PARTIDAS);
+        } else if (strcmp(comando, "SALIR") == 0) {
+            salirCliente(socket_cliente, readfds, clientes, numClientes, partidas);
+        } else {
+            char err[] = "-Err. Comando no válido fuera de partida. Usa INICIAR-PARTIDA o SALIR\n";
+            send(socket_cliente, err, strlen(err), 0);
+        }
+    } else if (clientes[id_user].estado == BUSCANDO_PARTIDA) {
+        if (strcmp(comando, "SALIR") == 0) {
+            salirCliente(socket_cliente, readfds, clientes, numClientes, partidas);
+        } else {
+            char err[] = "-Err. Esperando a otro jugador, aún no estás en partida\n";
+            send(socket_cliente, err, strlen(err), 0);
+        }
+    } else if (clientes[id_user].estado == JUGANDO) {
+        if (strcmp(comando, "ESTADO") == 0) {
+            estado(socket_cliente, id_partida_actual, partidas);
+        } else if (strcmp(comando, "CONQUISTAR") == 0 || 
+                   strcmp(comando, "ATACAR") == 0    || 
+                   strcmp(comando, "REFORZAR") == 0  || 
+                   strcmp(comando, "PASAR") == 0){
+
+            // 1. Comprobar si ya ha consumido su límite de 10 turnos
+            if (clientes[id_user].turno >= 10) {
+                char limite[] = "-Err. Has alcanzado el limite maximo de 10 turnos.\n";
+                send(socket_cliente, limite, strlen(limite), 0);
+                return;
+            }
+            bool ok = false;
+            if (strcmp(comando, "CONQUISTAR") == 0) {
+                ok = conquistar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
+            } else if (strcmp(comando, "ATACAR") == 0) {
+                ok = atacar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
+            } else if (strcmp(comando, "REFORZAR") == 0) {
+                ok = reforzar(socket_cliente, id_partida_actual, origen_str, destino_str, unidades_enviadas, partidas);
+            } else if (strcmp(comando, "PASAR") == 0) {
+                ok = pasar(socket_cliente, id_partida_actual, partidas);
+            }
+            if (ok) {
+                clientes[id_user].turno++;
+                //* avisar de cuántos turnos le quedan
+                char aviso[100];
+                snprintf(aviso, sizeof(aviso), "+Ok. Turno %d/10 consumido.\n", clientes[id_user].turno);
+                send(socket_cliente, aviso, strlen(aviso), 0);
+            }
+
+        } else if (strcmp(comando, "SALIR") == 0) {
+            salirCliente(socket_cliente, readfds, clientes, numClientes, partidas);
+        } else {
+            char err[] = "-Err. Comando no permitido mientras estás jugando\n";
+            send(socket_cliente, err, strlen(err), 0);
+        }
+    }
+}
